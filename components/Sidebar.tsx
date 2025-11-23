@@ -394,40 +394,39 @@ export const Sidebar: React.FC<SidebarProps> = ({
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-3 min-w-0">
             <div className="w-8 h-8 rounded-full bg-teal-600 flex items-center justify-center text-xs font-bold flex-shrink-0 text-white uppercase">
-              {user?.name?.substring(0, 2) || 'U'}
+              {/* Show First Initial */}
+              {user?.name?.replace(/[0-9]/g, '').charAt(0).toUpperCase() || 'U'}
             </div>
             <div className="text-xs overflow-hidden">
-              <p className="text-white font-medium truncate">{user?.name || 'User'}</p>
+              <p className="text-white font-medium truncate">
+                {/* Show Clean First Name */}
+                {user?.name 
+                  ? user.name.split('@')[0].replace(/[0-9]/g, '').charAt(0).toUpperCase() + 
+                    user.name.split('@')[0].replace(/[0-9]/g, '').slice(1)
+                  : 'User'}
+              </p>
               <p className="text-slate-500 truncate">{user?.email || 'Guest'}</p>
             </div>
           </div>
           
+          {/* ... (keep the existing menu button logic here) ... */}
           <div className="relative" ref={menuRef}>
+              {/* ... existing button and menu logic ... */}
               <button 
                 onClick={() => setShowUserMenu(!showUserMenu)} 
                 className="text-slate-500 hover:text-white p-1.5 rounded transition-colors" 
-                title="Options"
               >
                 <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
                     <path d="M10 6a2 2 0 110-4 2 2 0 010 4zM10 12a2 2 0 110-4 2 2 0 010 4zM10 18a2 2 0 110-4 2 2 0 010 4z" />
                 </svg>
               </button>
-
+              
               {showUserMenu && (
                   <div className="absolute bottom-full right-0 mb-2 w-32 bg-white rounded-lg shadow-xl overflow-hidden border border-slate-200 py-1 z-50 animate-fade-in">
-                      <button 
-                        onClick={() => { setShowUserMenu(false); onOpenProfile(); }}
-                        className="w-full text-left px-4 py-2 text-xs text-slate-700 hover:bg-slate-100 flex items-center"
-                      >
-                          <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-2 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
+                      <button onClick={() => { setShowUserMenu(false); onOpenProfile(); }} className="w-full text-left px-4 py-2 text-xs text-slate-700 hover:bg-slate-100 flex items-center">
                           Profile
                       </button>
-                      <div className="border-t border-slate-100 my-1"></div>
-                      <button 
-                        onClick={() => { setShowUserMenu(false); onLogout(); }}
-                        className="w-full text-left px-4 py-2 text-xs text-red-600 hover:bg-red-50 flex items-center"
-                      >
-                          <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" /></svg>
+                      <button onClick={() => { setShowUserMenu(false); onLogout(); }} className="w-full text-left px-4 py-2 text-xs text-red-600 hover:bg-red-50 flex items-center">
                           Log Out
                       </button>
                   </div>

@@ -1,17 +1,55 @@
-
 import { User, ChatSession, Appointment, Resource, JournalEntry } from '../types';
+import { ConvexHttpClient } from "convex/browser";
+import { api } from "../convex/_generated/api";
+import { Id } from "../convex/_generated/dataModel";
 
+const convex = new ConvexHttpClient(import.meta.env.VITE_CONVEX_URL || "");
 const USER_KEY = 'mansahay_current_user';
 const DATA_PREFIX = 'mansahay_data_';
 
 class StorageService {
-  // --- Auth Methods ---
+  
+  // --- Data Helpers ---
+  // Convert Date objects to ISO strings for Convex
+  private serialize(obj: any): any {
+    return JSON.parse(JSON.stringify(obj));
+  }
+
+  // Convert ISO strings back to Date objects for App
+  private rehydrateDates(obj: any): any {
+    if (obj === null || obj === undefined) return obj;
+    if (typeof obj === 'string') {
+      if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}.*Z$/.test(obj)) {
+        return new Date(obj);
+      }
+      return obj;
+    }
+    if (Array.isArray(obj)) {
+      return obj.map(v => this.rehydrateDates(v));
+    }
+    if (typeof obj === 'object') {
+      const res: any = {};
+      for (const key in obj) {
+        res[key] = this.rehydrateDates(obj[key]);
+      }
+      return res;
+    }
+    return obj;
+  }
+
+  private getUserDataKey(userId: string) {
+    return `${DATA_PREFIX}${userId}`;
+  }
+
+  // --- Auth & User Methods ---
 
   getUser(): User | null {
     try {
       const stored = localStorage.getItem(USER_KEY);
       if (!stored) return null;
       const parsed = JSON.parse(stored);
+      
+      // Hydrate Dates for Profile
       return {
         ...parsed,
         joinDate: new Date(parsed.joinDate),
@@ -27,100 +65,99 @@ class StorageService {
   }
 
   async login(email: string): Promise<User> {
-    // Simulating an API call
-    return new Promise((resolve, reject) => {
-      setTimeout(() => {
-        try {
-            // Check if we have this user stored locally already to preserve their settings
-            const existingUserStr = localStorage.getItem(USER_KEY);
-            let userToReturn: User;
-
-            if (existingUserStr && JSON.parse(existingUserStr).email === email) {
-                userToReturn = JSON.parse(existingUserStr);
-                userToReturn.joinDate = new Date(userToReturn.joinDate);
-                userToReturn.emergencyContacts = userToReturn.emergencyContacts || [];
-                userToReturn.goals = userToReturn.goals || [];
-                userToReturn.triggers = userToReturn.triggers || [];
-                userToReturn.preferences = userToReturn.preferences || { aiTone: 'empathetic' };
-            } else {
-                userToReturn = {
-                    id: btoa(email), // simple ID generation
-                    name: email.split('@')[0],
-                    email: email,
-                    joinDate: new Date(),
-                    emergencyContacts: [],
-                    goals: [],
-                    triggers: [],
-                    preferences: { aiTone: 'empathetic' }
-                };
-            }
-            
-            localStorage.setItem(USER_KEY, JSON.stringify(userToReturn));
-            resolve(userToReturn);
-        } catch (e) {
-            // Fallback for when storage is full or disabled
-            const fallbackUser: User = {
-                id: 'temp-user',
-                name: email.split('@')[0],
-                email: email,
-                joinDate: new Date(),
-                emergencyContacts: [],
-                goals: [],
-                triggers: [],
-                preferences: { aiTone: 'empathetic' }
-            };
-            resolve(fallbackUser);
-        }
-      }, 800);
-    });
-  }
-
-  async signup(name: string, email: string): Promise<User> {
-    return new Promise((resolve) => {
-      setTimeout(() => {
-        const newUser: User = {
-          id: btoa(email),
-          name: name,
-          email: email,
-          joinDate: new Date(),
-          emergencyContacts: [],
-          goals: [],
-          triggers: [],
-          preferences: { aiTone: 'empathetic' }
-        };
-        try {
-            localStorage.setItem(USER_KEY, JSON.stringify(newUser));
-        } catch (e) {
-            console.warn("Could not persist new user signup", e);
-        }
-        resolve(newUser);
-      }, 800);
-    });
-  }
-
-  logout() {
     try {
-        localStorage.removeItem(USER_KEY);
+      // 1. Try to get from Cloud DB
+      let userConfig = await convex.query(api.api.getUser, { email });
+
+      // 2. Auto-create if Clerk login succeeded but no DB record
+      if (!userConfig) {
+         console.log("User missing in DB, auto-creating...");
+         userConfig = await convex.mutation(api.api.createUser, {
+             name: email.split('@')[0],
+             email: email
+         });
+      }
+
+      if (userConfig) {
+        const user: User = {
+          id: userConfig._id,
+          name: userConfig.name,
+          email: userConfig.email,
+          joinDate: new Date(userConfig.joinDate),
+          phone: userConfig.phone,
+          dateOfBirth: userConfig.dateOfBirth,
+          medicalHistory: userConfig.medicalHistory,
+          emergencyContacts: userConfig.emergencyContacts || [],
+          goals: userConfig.goals || [],
+          triggers: userConfig.triggers || [],
+          preferences: userConfig.preferences || { aiTone: 'empathetic' }
+        };
+        
+        localStorage.setItem(USER_KEY, JSON.stringify(user));
+        return user;
+      }
+      throw new Error("User retrieval failed");
     } catch (e) {
-        console.warn("Logout storage clear failed", e);
+      console.error("Login error", e);
+      // Throwing to allow App UI to handle failure
+      throw e; 
     }
   }
 
-  updateUser(user: User) {
+  async signup(name: string, email: string): Promise<User> {
+    const userRecord = await convex.mutation(api.api.createUser, {
+        name, 
+        email
+    });
+
+    const user: User = {
+        id: userRecord._id,
+        name: userRecord.name,
+        email: userRecord.email,
+        joinDate: new Date(userRecord.joinDate),
+        emergencyContacts: [],
+        goals: [],
+        triggers: [],
+        preferences: { aiTone: 'empathetic' }
+    };
+
+    localStorage.setItem(USER_KEY, JSON.stringify(user));
+    return user;
+  }
+
+  async updateUser(user: User) {
+      // 1. Update Local Cache
+      localStorage.setItem(USER_KEY, JSON.stringify(user));
+
+      // 2. Update Cloud
       try {
-        localStorage.setItem(USER_KEY, JSON.stringify(user));
-      } catch (e) {
-        console.warn("Update user failed", e);
+          await convex.mutation(api.api.updateUser, {
+              id: user.id as Id<"users">,
+              name: user.name,
+              phone: user.phone,
+              dateOfBirth: user.dateOfBirth,
+              medicalHistory: user.medicalHistory,
+              goals: user.goals,
+              triggers: user.triggers,
+              preferences: user.preferences,
+              emergencyContacts: user.emergencyContacts
+          });
+      } catch(e) {
+          console.error("Failed to sync profile update to cloud", e);
       }
   }
 
-  // --- Data Methods ---
-
-  private getUserDataKey(userId: string) {
-    return `${DATA_PREFIX}${userId}`;
+  logout() {
+    localStorage.removeItem(USER_KEY);
+    // Optional: Clear cached session data too
+    const userId = this.getUser()?.id;
+    if(userId) localStorage.removeItem(this.getUserDataKey(userId));
   }
 
+  // --- Application Data Methods (Chats, etc) ---
+
   saveData(userId: string, sessions: ChatSession[], appointments: Appointment[], resources: Resource[], journalEntries: JournalEntry[] = []) {
+    // 1. Save Local (Sync) for performance
     const data = {
       sessions,
       appointments,
@@ -128,55 +165,52 @@ class StorageService {
       journalEntries,
       lastSaved: new Date().toISOString()
     };
-    try {
-        localStorage.setItem(this.getUserDataKey(userId), JSON.stringify(data));
-    } catch (e) {
-        console.warn("Failed to save user data (quota exceeded?)", e);
-    }
+    localStorage.setItem(this.getUserDataKey(userId), JSON.stringify(data));
+
+    // 2. Save Cloud (Async)
+    convex.mutation(api.api.saveUserData, {
+      userId,
+      sessions: this.serialize(sessions),
+      appointments: this.serialize(appointments),
+      resources: this.serialize(resources),
+      journalEntries: this.serialize(journalEntries),
+      lastSaved: data.lastSaved
+    }).catch(e => console.error("Cloud save failed", e));
   }
 
   loadData(userId: string): { sessions: ChatSession[], appointments: Appointment[], resources: Resource[], journalEntries: JournalEntry[] } {
+    // 1. Trigger Cloud Sync in background
+    this.syncFromCloud(userId);
+
+    // 2. Return Local Cache immediately
     try {
       const stored = localStorage.getItem(this.getUserDataKey(userId));
       if (!stored) return { sessions: [], appointments: [], resources: [], journalEntries: [] };
       
       const parsed = JSON.parse(stored);
-      
-      // Hydrate dates
-      const sessions = (parsed.sessions || []).map((s: any) => ({
-        ...s,
-        lastModified: new Date(s.lastModified),
-        analysis: {
-            ...s.analysis,
-            lastUpdated: new Date(s.analysis.lastUpdated)
-        },
-        messages: s.messages.map((m: any) => ({
-            ...m,
-            timestamp: new Date(m.timestamp)
-        }))
-      }));
-
-      const appointments = parsed.appointments || [];
-      
-      // Sanitize Resources
-      const resources = (parsed.resources || []).map((r: any) => ({
-        ...r,
-        type: r.type || 'file',
-        origin: r.origin || 'user',
-        date: new Date(r.date)
-      }));
-
-      const journalEntries = (parsed.journalEntries || []).map((j: any) => ({
-        ...j,
-        createdAt: new Date(j.createdAt),
-        updatedAt: new Date(j.updatedAt)
-      }));
-
-      return { sessions, appointments, resources, journalEntries };
+      return this.rehydrateDates(parsed);
     } catch (e) {
-      console.error("Failed to load user data", e);
       return { sessions: [], appointments: [], resources: [], journalEntries: [] };
     }
+  }
+
+  private async syncFromCloud(userId: string) {
+      try {
+          const cloudData = await convex.query(api.api.loadUserData, { userId });
+          if (cloudData) {
+              const hydrated = {
+                  sessions: this.rehydrateDates(cloudData.sessions),
+                  appointments: this.rehydrateDates(cloudData.appointments),
+                  resources: this.rehydrateDates(cloudData.resources),
+                  journalEntries: this.rehydrateDates(cloudData.journalEntries),
+                  lastSaved: cloudData.lastSaved
+              };
+              // Update local cache silently
+              localStorage.setItem(this.getUserDataKey(userId), JSON.stringify(hydrated));
+          }
+      } catch(e) {
+          console.error("Cloud sync failed", e);
+      }
   }
 }
 

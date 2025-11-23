@@ -20,6 +20,7 @@ import { OnboardingModal } from './components/OnboardingModal';
 import { processFile } from './utils/fileProcessor';
 import { MUSIC_LIBRARY } from './data/musicLibrary';
 import { LoadingBubble } from './components/LoadingBubble';
+import { useAuth, useUser } from "@clerk/clerk-react";
 
 const INITIAL_MESSAGE: Message = {
   id: 'init',
@@ -80,6 +81,22 @@ export default function App() {
   const [showEmergency, setShowEmergency] = useState(false);
   const [emergencyReason, setEmergencyReason] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+
+  const { isSignedIn, signOut } = useAuth();
+  const { user: clerkUser } = useUser();
+
+  useEffect(() => {
+    if (isSignedIn && clerkUser && !currentUser) {
+      // User logged in via Clerk UI -> Trigger App Logic
+      const email = clerkUser.primaryEmailAddress?.emailAddress || "";
+      handleLogin(email); 
+    } else if (!isSignedIn && currentUser) {
+      // User logged out -> Clean up state
+      handleLogout();
+    }
+  }, [isSignedIn, clerkUser, currentUser]);
+
 
   // --- Auth Initialization & Geolocation ---
   useEffect(() => {
@@ -176,24 +193,36 @@ export default function App() {
     const user = await storageService.login(email);
     setCurrentUser(user);
     const data = storageService.loadData(user.id);
+
+    const isNewUser = (!user.goals || user.goals.length === 0) ;
+
+    if (isNewUser) {
+       setShowOnboarding(true); // <--- This triggers the modal
+    }
+
     setSessions(data.sessions);
     setAppointments(data.appointments);
     setResources(data.resources);
     setJournalEntries(data.journalEntries);
     
     if (data.sessions.length === 0) {
-       setActiveSessionId('new');
-       // Check if we need to personalize the init message based on stored user data
-       if (user.name) {
-           setMessages([{
-               id: 'init', role: Role.MODEL, 
-               text: `Welcome back, ${user.name}. I'm ready to listen. How are you?`, 
-               timestamp: new Date() 
-           }]);
-       } else {
-           setMessages([INITIAL_MESSAGE]);
-       }
-    } else {
+      setActiveSessionId('new');
+      
+      if (user.name) {
+          // LOGIC: Remove numbers (like 55), take the first word, and Capitalize it
+          const cleanName = user.name.split('@')[0].replace(/[0-9]/g, '');
+          const firstName = cleanName.charAt(0).toUpperCase() + cleanName.slice(1);
+
+          setMessages([{
+              id: 'init', role: Role.MODEL, 
+              // UPDATED LINE BELOW:
+              text: `Welcome back, ${firstName}. I'm ready to listen. How are you?`, 
+              timestamp: new Date() 
+          }]);
+      } else {
+          setMessages([INITIAL_MESSAGE]);
+      }
+   } else {
         // Restore last session
         const lastSession = data.sessions[data.sessions.length - 1];
         setActiveSessionId(lastSession.id);
@@ -244,36 +273,59 @@ export default function App() {
           currentMusicTrack: musicState.currentTrack,
           userProfile: updatedUser
       }).then(result => {
-          if (result.text && result.text.trim()) {
-            const modelMsg: Message = {
-                id: Date.now().toString(),
-                role: Role.MODEL,
-                text: result.text,
-                timestamp: new Date()
-            };
-            setMessages([modelMsg]);
-            ttsService.speak(result.text);
-          }
-          setIsLoading(false);
-      });
-  };
+
+        let welcomeText = result.text;
+          
+        // If AI returns empty (common if it only executed a tool), use a fallback
+        if (!welcomeText || !welcomeText.trim()) {
+           welcomeText = `Welcome, ${updatedUser.name}. I'm Mansahay. I'm here to support you with ${updatedUser.goals?.[0] || 'your mental wellness'}. How are you feeling right now?`;
+        }
+
+        const modelMsg: Message = {
+            id: Date.now().toString(),
+            role: Role.MODEL,
+            text: welcomeText,
+            timestamp: new Date()
+        };
+        setMessages([modelMsg]);
+        ttsService.speak(welcomeText);
+        setIsLoading(false);
+    }).catch(error => {
+        console.error("Onboarding error:", error);
+        // Fallback in case of total API failure
+        setMessages([{
+            id: Date.now().toString(),
+            role: Role.MODEL,
+            text: `Hi ${updatedUser.name}, I'm here. How are you feeling?`,
+            timestamp: new Date()
+        }]);
+        setIsLoading(false);
+    });
+};
 
   const handleUpdateUser = (updatedUser: User) => {
       setCurrentUser(updatedUser);
       storageService.updateUser(updatedUser);
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    // 1. Log out from Clerk (this clears the session cookie)
+    await signOut();
+
+    // 2. Log out from Local Storage
     storageService.logout();
+    
+    // 3. Clear App State
     setCurrentUser(null);
     setSessions([]);
     setAppointments([]);
     setResources([]);
     setJournalEntries([]);
     setMessages([INITIAL_MESSAGE]);
+    
+    // 4. Stop Voice Services
     ttsService.stop();
   };
-
   const createNewChat = () => {
     setActiveSessionId('new');
     

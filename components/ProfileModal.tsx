@@ -1,4 +1,3 @@
-
 import React, { useState, useRef, useEffect } from 'react';
 import { User, EmergencyContact } from '../types';
 
@@ -17,6 +16,7 @@ const TONE_OPTIONS = [
 ];
 
 export const ProfileModal: React.FC<Props> = ({ isOpen, onClose, user, onUpdateUser }) => {
+  // State
   const [name, setName] = useState(user.name);
   const [phone, setPhone] = useState(user.phone || '');
   const [dob, setDob] = useState(user.dateOfBirth || '');
@@ -27,7 +27,12 @@ export const ProfileModal: React.FC<Props> = ({ isOpen, onClose, user, onUpdateU
   const [newGoal, setNewGoal] = useState('');
   const [triggers, setTriggers] = useState<string[]>(user.triggers || []);
   const [newTrigger, setNewTrigger] = useState('');
-  const [aiTone, setAiTone] = useState<'empathetic' | 'direct' | 'professional' | 'warm'>(user.preferences?.aiTone || 'empathetic');
+  
+  // Fix: Ensure we safely access the nested preference, defaulting if missing
+  const [aiTone, setAiTone] = useState<'empathetic' | 'direct' | 'professional' | 'warm'>(
+    user.preferences?.aiTone || 'empathetic'
+  );
+  
   const [showToneDropdown, setShowToneDropdown] = useState(false);
 
   // Emergency Contact Form State
@@ -38,6 +43,21 @@ export const ProfileModal: React.FC<Props> = ({ isOpen, onClose, user, onUpdateU
   const [isAddingContact, setIsAddingContact] = useState(false);
 
   const dropdownRef = useRef<HTMLDivElement>(null);
+
+  // --- CRITICAL FIX: Sync State when User Prop Updates or Modal Opens ---
+  useEffect(() => {
+    if (isOpen && user) {
+        setName(user.name);
+        setPhone(user.phone || '');
+        setDob(user.dateOfBirth || '');
+        setMedicalHistory(user.medicalHistory || '');
+        setGoals(user.goals || []);
+        setTriggers(user.triggers || []);
+        setContacts(user.emergencyContacts || []);
+        setAiTone(user.preferences?.aiTone || 'empathetic');
+    }
+  }, [isOpen, user]);
+  // --------------------------------------------------------------------
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -113,7 +133,7 @@ export const ProfileModal: React.FC<Props> = ({ isOpen, onClose, user, onUpdateU
         {/* Header */}
         <div className="p-6 bg-slate-800 text-white flex justify-between items-center shrink-0">
             <div className="flex items-center space-x-3">
-                <div className="w-10 h-10 bg-teal-600 rounded-full flex items-center justify-center font-bold text-lg">
+                <div className="w-10 h-10 bg-teal-600 rounded-full flex items-center justify-center font-bold text-lg text-white">
                     {name.charAt(0).toUpperCase()}
                 </div>
                 <div>
