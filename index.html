@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Mansahay - Mental Health AI</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            colors: {
+              teal: {
+                50: '#f0fdfa',
+                100: '#ccfbf1',
+                600: '#0d9488',
+                800: '#115e59',
+              },
+              slate: {
+                850: '#1e293b',
+              }
+            },
+            animation: {
+              'pulse-slow': 'pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+              'fade-in': 'fadeIn 0.5s ease-out',
+            },
+            keyframes: {
+              fadeIn: {
+                '0%': { opacity: '0', transform: 'translateY(10px)' },
+                '100%': { opacity: '1', transform: 'translateY(0)' },
+              }
+            }
+          }
+        }
+      }
+    </script>
+    <style>
+      /* Custom scrollbar for chat */
+      .scrollbar-hide::-webkit-scrollbar {
+          display: none;
+      }
+      .scrollbar-hide {
+          -ms-overflow-style: none;
+          scrollbar-width: none;
+      }
+      /* Markdown Styles */
+      .prose p { margin-bottom: 0.5em; }
+      .prose p:last-child { margin-bottom: 0; }
+      .prose ul { list-style-type: disc; padding-left: 1.5em; margin-bottom: 0.5em; }
+      .prose ol { list-style-type: decimal; padding-left: 1.5em; margin-bottom: 0.5em; }
+      .prose strong { font-weight: 700; }
+    </style>
+  <script type="importmap">
+{
+  "imports": {
+    "react/": "https://aistudiocdn.com/react@^19.2.0/",
+    "react": "https://aistudiocdn.com/react@^19.2.0",
+    "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.0/",
+    "@google/genai": "https://aistudiocdn.com/@google/genai@^1.30.0",
+    "react-markdown": "https://esm.sh/react-markdown@9.0.1?bundle",
+    "pdfjs-dist": "https://esm.sh/pdfjs-dist@3.11.174",
+    "pdfjs-dist/": "https://esm.sh/pdfjs-dist@3.11.174/"
+  }
+}
+</script>
+</head>
+  <body class="bg-slate-50 text-slate-800 antialiased h-screen w-screen overflow-hidden">
+    <div id="root" class="h-full w-full"></div>
+    <script type="module" src="/index.tsx"></script>
+  </body>
+</html>

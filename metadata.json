@@ -1,0 +1,8 @@
+{
+  "name": "Mansahay AI",
+  "description": "A comprehensive AI-powered mental health support platform providing 24/7 assistance, crisis intervention, and professional interfacing.",
+  "requestFramePermissions": [
+    "microphone",
+    "geolocation"
+  ]
+}
