@@ -1,11 +1,14 @@
+
 import React from 'react';
+import { EmergencyContact } from '../types';
 
 interface Props {
   onClose: () => void;
   reason: string;
+  contacts?: EmergencyContact[];
 }
 
-export const EmergencyOverlay: React.FC<Props> = ({ onClose, reason }) => {
+export const EmergencyOverlay: React.FC<Props> = ({ onClose, reason, contacts = [] }) => {
   return (
     <div className="fixed inset-0 z-50 bg-red-900/90 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in">
       <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden">
@@ -24,17 +27,26 @@ export const EmergencyOverlay: React.FC<Props> = ({ onClose, reason }) => {
             We have detected a potential crisis. Help is being contacted.
           </p>
 
-          <div className="space-y-3">
-             <div className="bg-slate-100 p-4 rounded-lg flex justify-between items-center">
-                <div>
-                    <p className="font-semibold text-slate-800">Emergency Contact (Mom)</p>
-                    <p className="text-sm text-slate-500">Notified via SMS</p>
-                </div>
-                <span className="text-green-600 text-sm font-bold flex items-center">
-                    <span className="w-2 h-2 bg-green-500 rounded-full mr-2 animate-pulse"></span>
-                    Sent
-                </span>
-             </div>
+          <div className="space-y-3 max-h-[200px] overflow-y-auto pr-1">
+             {contacts.length > 0 ? (
+                 contacts.map(contact => (
+                     <div key={contact.id} className="bg-slate-100 p-4 rounded-lg flex justify-between items-center border border-slate-200">
+                        <div>
+                            <p className="font-semibold text-slate-800">{contact.name} <span className="text-slate-500 text-xs">({contact.relation})</span></p>
+                            <p className="text-sm text-slate-500">Notified via SMS ({contact.phone})</p>
+                        </div>
+                        <span className="text-green-600 text-sm font-bold flex items-center">
+                            <span className="w-2 h-2 bg-green-500 rounded-full mr-2 animate-pulse"></span>
+                            Sent
+                        </span>
+                     </div>
+                 ))
+             ) : (
+                 <div className="bg-orange-50 border border-orange-200 p-4 rounded-lg text-center">
+                     <p className="text-orange-800 font-bold text-sm">No emergency contacts configured.</p>
+                     <p className="text-orange-600 text-xs">Please add contacts in your profile for future safety.</p>
+                 </div>
+             )}
              
              <div className="bg-slate-100 p-4 rounded-lg flex justify-between items-center">
                 <div>

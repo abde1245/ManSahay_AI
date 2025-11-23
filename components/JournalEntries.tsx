@@ -1,12 +1,11 @@
 
-import React, { useState } from 'react';
+import React from 'react';
 import { JournalEntry, MoodType } from '../types';
-import { JournalWidget } from './JournalWidget';
 
 interface Props {
   entries: JournalEntry[];
-  onDelete: (id: string) => void;
-  onEdit?: (entry: JournalEntry) => void;
+  onSelect: (entry: JournalEntry) => void;
+  onDelete?: (id: string) => void;
 }
 
 const MOOD_EMOJIS: Record<MoodType, string> = {
@@ -19,90 +18,7 @@ const MOOD_EMOJIS: Record<MoodType, string> = {
   angry: '😠'
 };
 
-export const JournalEntries: React.FC<Props> = ({ entries, onDelete, onEdit }) => {
-  const [selectedEntry, setSelectedEntry] = useState<JournalEntry | null>(null);
-  const [isEditing, setIsEditing] = useState(false);
-
-  if (selectedEntry) {
-    // Reader Modal
-    return (
-      <div className="fixed inset-0 z-50 bg-slate-900/80 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in">
-        <div className="bg-white w-full max-w-2xl max-h-[90vh] rounded-2xl shadow-2xl overflow-hidden flex flex-col">
-          {/* Modal Header */}
-          <div className="flex justify-between items-center p-4 border-b border-slate-100">
-            <button 
-              onClick={() => { setSelectedEntry(null); setIsEditing(false); }}
-              className="text-slate-400 hover:text-slate-600"
-            >
-              Close
-            </button>
-            <div className="flex gap-2">
-               {!isEditing && (
-                 <button 
-                   onClick={() => setIsEditing(true)}
-                   className="text-teal-600 hover:text-teal-700 font-medium text-sm px-3 py-1 rounded-lg hover:bg-teal-50"
-                 >
-                   Edit
-                 </button>
-               )}
-               <button 
-                 onClick={() => {
-                   if(window.confirm('Delete this entry?')) {
-                     onDelete(selectedEntry.id);
-                     setSelectedEntry(null);
-                   }
-                 }}
-                 className="text-red-500 hover:text-red-600 font-medium text-sm px-3 py-1 rounded-lg hover:bg-red-50"
-               >
-                 Delete
-               </button>
-            </div>
-          </div>
-
-          {/* Content Area */}
-          <div className="flex-1 overflow-y-auto p-8">
-             {isEditing ? (
-                <JournalWidget 
-                   existingEntry={selectedEntry} 
-                   onSave={(updated) => {
-                      if (onEdit) onEdit(updated);
-                      setSelectedEntry(updated);
-                      setIsEditing(false);
-                   }} 
-                />
-             ) : (
-                <div className="prose prose-slate max-w-none">
-                   <div className="flex items-center gap-3 mb-6">
-                      <span className="text-4xl">{MOOD_EMOJIS[selectedEntry.mood]}</span>
-                      <div>
-                        <h2 className="text-2xl font-bold text-slate-800 m-0 leading-tight">{selectedEntry.title}</h2>
-                        <p className="text-slate-400 text-sm m-0">{new Date(selectedEntry.createdAt).toLocaleDateString()} • {selectedEntry.wordCount} words</p>
-                      </div>
-                   </div>
-                   
-                   {selectedEntry.prompt && (
-                     <blockquote className="border-l-4 border-teal-500 pl-4 italic text-slate-500 my-6 bg-slate-50 p-4 rounded-r-lg">
-                        {selectedEntry.prompt}
-                     </blockquote>
-                   )}
-
-                   <div className="whitespace-pre-wrap text-slate-700 leading-relaxed text-lg">
-                      {selectedEntry.content}
-                   </div>
-
-                   <div className="mt-8 pt-4 border-t border-slate-100 flex gap-2">
-                      {selectedEntry.tags.map(t => (
-                         <span key={t} className="text-xs bg-slate-100 text-slate-500 px-2 py-1 rounded-full">#{t}</span>
-                      ))}
-                   </div>
-                </div>
-             )}
-          </div>
-        </div>
-      </div>
-    );
-  }
-
+export const JournalEntries: React.FC<Props> = ({ entries, onSelect, onDelete }) => {
   if (entries.length === 0) {
      return (
        <div className="text-center py-6 px-4">
@@ -118,12 +34,12 @@ export const JournalEntries: React.FC<Props> = ({ entries, onDelete, onEdit }) =
        {entries.slice().reverse().map(entry => (
           <div 
             key={entry.id}
-            onClick={() => setSelectedEntry(entry)}
-            className="bg-slate-800/40 hover:bg-slate-800 border border-transparent hover:border-slate-700 p-3 rounded-lg cursor-pointer transition-all group"
+            onClick={() => onSelect(entry)}
+            className="bg-slate-800/40 hover:bg-slate-800 border border-transparent hover:border-slate-700 p-3 rounded-lg cursor-pointer transition-all group relative"
           >
              <div className="flex justify-between items-start mb-1">
                 <span className="font-medium text-slate-200 text-xs truncate flex-1 pr-2">{entry.title}</span>
-                <span className="text-sm opacity-80">{MOOD_EMOJIS[entry.mood]}</span>
+                <span className="text-sm opacity-80 group-hover:opacity-0 transition-opacity">{MOOD_EMOJIS[entry.mood]}</span>
              </div>
              <p className="text-[10px] text-slate-500 line-clamp-2 leading-relaxed">
                 {entry.content}
@@ -134,6 +50,18 @@ export const JournalEntries: React.FC<Props> = ({ entries, onDelete, onEdit }) =
                    <span className="text-[10px] bg-slate-700 text-slate-400 px-1.5 py-0.5 rounded-full">#{entry.tags[0]}</span>
                 )}
              </div>
+
+             {onDelete && (
+                <button 
+                  onClick={(e) => { e.stopPropagation(); onDelete(entry.id); }}
+                  className="absolute top-2 right-2 text-slate-500 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity bg-slate-800/80 p-0.5 rounded"
+                  title="Delete Entry"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+             )}
           </div>
        ))}
     </div>

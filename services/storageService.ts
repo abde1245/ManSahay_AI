@@ -14,9 +14,14 @@ class StorageService {
       const parsed = JSON.parse(stored);
       return {
         ...parsed,
-        joinDate: new Date(parsed.joinDate)
+        joinDate: new Date(parsed.joinDate),
+        emergencyContacts: parsed.emergencyContacts || [],
+        goals: parsed.goals || [],
+        triggers: parsed.triggers || [],
+        preferences: parsed.preferences || { aiTone: 'empathetic' }
       };
     } catch (e) {
+      console.warn("Storage access failed", e);
       return null;
     }
   }
@@ -25,15 +30,47 @@ class StorageService {
     // Simulating an API call
     return new Promise((resolve, reject) => {
       setTimeout(() => {
-        const mockUser: User = {
-          id: btoa(email), // simple ID generation
-          name: email.split('@')[0],
-          email: email,
-          joinDate: new Date()
-        };
-        
-        localStorage.setItem(USER_KEY, JSON.stringify(mockUser));
-        resolve(mockUser);
+        try {
+            // Check if we have this user stored locally already to preserve their settings
+            const existingUserStr = localStorage.getItem(USER_KEY);
+            let userToReturn: User;
+
+            if (existingUserStr && JSON.parse(existingUserStr).email === email) {
+                userToReturn = JSON.parse(existingUserStr);
+                userToReturn.joinDate = new Date(userToReturn.joinDate);
+                userToReturn.emergencyContacts = userToReturn.emergencyContacts || [];
+                userToReturn.goals = userToReturn.goals || [];
+                userToReturn.triggers = userToReturn.triggers || [];
+                userToReturn.preferences = userToReturn.preferences || { aiTone: 'empathetic' };
+            } else {
+                userToReturn = {
+                    id: btoa(email), // simple ID generation
+                    name: email.split('@')[0],
+                    email: email,
+                    joinDate: new Date(),
+                    emergencyContacts: [],
+                    goals: [],
+                    triggers: [],
+                    preferences: { aiTone: 'empathetic' }
+                };
+            }
+            
+            localStorage.setItem(USER_KEY, JSON.stringify(userToReturn));
+            resolve(userToReturn);
+        } catch (e) {
+            // Fallback for when storage is full or disabled
+            const fallbackUser: User = {
+                id: 'temp-user',
+                name: email.split('@')[0],
+                email: email,
+                joinDate: new Date(),
+                emergencyContacts: [],
+                goals: [],
+                triggers: [],
+                preferences: { aiTone: 'empathetic' }
+            };
+            resolve(fallbackUser);
+        }
       }, 800);
     });
   }
@@ -45,16 +82,36 @@ class StorageService {
           id: btoa(email),
           name: name,
           email: email,
-          joinDate: new Date()
+          joinDate: new Date(),
+          emergencyContacts: [],
+          goals: [],
+          triggers: [],
+          preferences: { aiTone: 'empathetic' }
         };
-        localStorage.setItem(USER_KEY, JSON.stringify(newUser));
+        try {
+            localStorage.setItem(USER_KEY, JSON.stringify(newUser));
+        } catch (e) {
+            console.warn("Could not persist new user signup", e);
+        }
         resolve(newUser);
       }, 800);
     });
   }
 
   logout() {
-    localStorage.removeItem(USER_KEY);
+    try {
+        localStorage.removeItem(USER_KEY);
+    } catch (e) {
+        console.warn("Logout storage clear failed", e);
+    }
+  }
+
+  updateUser(user: User) {
+      try {
+        localStorage.setItem(USER_KEY, JSON.stringify(user));
+      } catch (e) {
+        console.warn("Update user failed", e);
+      }
   }
 
   // --- Data Methods ---
@@ -71,7 +128,11 @@ class StorageService {
       journalEntries,
       lastSaved: new Date().toISOString()
     };
-    localStorage.setItem(this.getUserDataKey(userId), JSON.stringify(data));
+    try {
+        localStorage.setItem(this.getUserDataKey(userId), JSON.stringify(data));
+    } catch (e) {
+        console.warn("Failed to save user data (quota exceeded?)", e);
+    }
   }
 
   loadData(userId: string): { sessions: ChatSession[], appointments: Appointment[], resources: Resource[], journalEntries: JournalEntry[] } {
@@ -97,7 +158,7 @@ class StorageService {
 
       const appointments = parsed.appointments || [];
       
-      // Sanitize Resources: ensure type and origin exist (for legacy data compatibility)
+      // Sanitize Resources
       const resources = (parsed.resources || []).map((r: any) => ({
         ...r,
         type: r.type || 'file',

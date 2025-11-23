@@ -14,6 +14,9 @@ import { AppointmentModal } from './components/AppointmentModal';
 import { LandingPage } from './components/LandingPage';
 import { AuthModal } from './components/AuthModal';
 import { ResourceModal } from './components/ResourceModal';
+import { JournalEntryModal } from './components/JournalEntryModal';
+import { ProfileModal } from './components/ProfileModal';
+import { OnboardingModal } from './components/OnboardingModal';
 import { processFile } from './utils/fileProcessor';
 import { MUSIC_LIBRARY } from './data/musicLibrary';
 import { LoadingBubble } from './components/LoadingBubble';
@@ -36,6 +39,7 @@ export default function App() {
   // --- Auth State ---
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [showAuthModal, setShowAuthModal] = useState(false);
+  const [showOnboarding, setShowOnboarding] = useState(false);
   const [authLoading, setAuthLoading] = useState(true);
   const [streak, setStreak] = useState(0);
 
@@ -53,7 +57,9 @@ export default function App() {
   // UI State
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [showAppointmentModal, setShowAppointmentModal] = useState(false);
+  const [showProfileModal, setShowProfileModal] = useState(false);
   const [selectedResource, setSelectedResource] = useState<Resource | null>(null);
+  const [selectedJournalEntry, setSelectedJournalEntry] = useState<JournalEntry | null>(null);
 
   // Real-time Analysis State
   const [analysis, setAnalysis] = useState<RiskAnalysis>(INITIAL_ANALYSIS);
@@ -174,9 +180,27 @@ export default function App() {
     setAppointments(data.appointments);
     setResources(data.resources);
     setJournalEntries(data.journalEntries);
-    setActiveSessionId('new');
-    setMessages([INITIAL_MESSAGE]);
-    setAnalysis(INITIAL_ANALYSIS);
+    
+    if (data.sessions.length === 0) {
+       setActiveSessionId('new');
+       // Check if we need to personalize the init message based on stored user data
+       if (user.name) {
+           setMessages([{
+               id: 'init', role: Role.MODEL, 
+               text: `Welcome back, ${user.name}. I'm ready to listen. How are you?`, 
+               timestamp: new Date() 
+           }]);
+       } else {
+           setMessages([INITIAL_MESSAGE]);
+       }
+    } else {
+        // Restore last session
+        const lastSession = data.sessions[data.sessions.length - 1];
+        setActiveSessionId(lastSession.id);
+        setMessages(lastSession.messages);
+        setAnalysis(lastSession.analysis);
+    }
+    
     setShowAuthModal(false);
   };
 
@@ -188,6 +212,55 @@ export default function App() {
     setResources([]);
     setJournalEntries([]);
     setShowAuthModal(false);
+    // Trigger Onboarding
+    setShowOnboarding(true);
+  };
+
+  const handleOnboardingComplete = (updatedUser: User) => {
+      handleUpdateUser(updatedUser);
+      setShowOnboarding(false);
+      
+      // Trigger Personalized Welcome
+      setActiveSessionId('new');
+      
+      // We start with an empty message list because we want the AI to generate the greeting
+      setMessages([]); 
+      setIsLoading(true);
+
+      const contextPrompt = `[SYSTEM TRIGGER] The user just finished onboarding. 
+      Name: ${updatedUser.name}. 
+      Goals: ${updatedUser.goals?.join(', ')}. 
+      Tone Preference: ${updatedUser.preferences?.aiTone}. 
+      
+      Task: Introduce yourself as Mansahay. Warmly welcome the user by name. Acknowledge their goals briefly and ask how they are feeling right now. 
+      IMPORTANT: Do not suggest any tools (like breathing, journaling) in this first message. Just listen and welcome.`;
+
+      geminiService.sendMessage(contextPrompt, handleToolCall, {
+          appointments: [],
+          mood: 'Neutral',
+          resources: [],
+          localTime: contextService.getCurrentTime(),
+          location: userLocation,
+          currentMusicTrack: musicState.currentTrack,
+          userProfile: updatedUser
+      }).then(result => {
+          if (result.text && result.text.trim()) {
+            const modelMsg: Message = {
+                id: Date.now().toString(),
+                role: Role.MODEL,
+                text: result.text,
+                timestamp: new Date()
+            };
+            setMessages([modelMsg]);
+            ttsService.speak(result.text);
+          }
+          setIsLoading(false);
+      });
+  };
+
+  const handleUpdateUser = (updatedUser: User) => {
+      setCurrentUser(updatedUser);
+      storageService.updateUser(updatedUser);
   };
 
   const handleLogout = () => {
@@ -203,7 +276,19 @@ export default function App() {
 
   const createNewChat = () => {
     setActiveSessionId('new');
-    setMessages([INITIAL_MESSAGE]);
+    
+    // Personalized greeting for new chat
+    const greeting = currentUser?.name 
+        ? `Hi ${currentUser.name}. I'm here. What's on your mind?` 
+        : "I'm here to listen. How are you feeling?";
+
+    setMessages([{
+        id: 'init-' + Date.now(),
+        role: Role.MODEL,
+        text: greeting,
+        timestamp: new Date()
+    }]);
+    
     setAnalysis(INITIAL_ANALYSIS);
     ttsService.stop();
     if (window.innerWidth < 1024) setIsSidebarOpen(false);
@@ -338,7 +423,6 @@ export default function App() {
         text: `Resource Saved: ${resource.title}`,
         timestamp: new Date()
       }]);
-      // Removed automatic chat trigger for art therapy to prevent API errors
   };
 
   const handleDeleteResource = (e: React.MouseEvent, id: string) => {
@@ -497,25 +581,17 @@ export default function App() {
        } else if (action === 'CHANGE_TRACK') {
          if (searchQuery) {
              const q = searchQuery.toLowerCase();
-             
-             // Smart Search Logic
              const scoredTracks = MUSIC_LIBRARY.map(track => {
                  let score = 0;
-                 // High Priority: Tag Match (e.g. "sad" matches "sad")
                  if (track.tags.some(t => q.includes(t))) score += 3;
-                 // Medium Priority: Title Match
                  if (track.title.toLowerCase().includes(q)) score += 2;
-                 // Low Priority: Category Match
                  if (track.category.toLowerCase().includes(q)) score += 1;
                  return { track, score };
              }).sort((a, b) => b.score - a.score);
 
-             // If we have a match with score > 0, play it
              if (scoredTracks[0].score > 0) {
                  handleMusicChange({ currentTrack: scoredTracks[0].track, isPlaying: true });
              } else {
-                 // Fallback: Play something relaxing if no match found, instead of random
-                 // This ensures we always play *something* appropriate
                  const fallback = MUSIC_LIBRARY.find(t => t.title === 'Gentle Rain') || MUSIC_LIBRARY[0];
                  handleMusicChange({ currentTrack: fallback, isPlaying: true });
              }
@@ -546,7 +622,6 @@ export default function App() {
     const textToSend = overrideInput || input;
     if (!textToSend.trim() || isLoading) return;
 
-    // Stop any ongoing speech when user types
     ttsService.stop();
 
     let currentSessionId = activeSessionId;
@@ -599,22 +674,24 @@ export default function App() {
               resources: resources,
               localTime: contextService.getCurrentTime(),
               location: userLocation,
-              currentMusicTrack: musicState.currentTrack // Pass current track context
+              currentMusicTrack: musicState.currentTrack,
+              userProfile: currentUser || undefined
           },
           useWebSearch
       );
       
-      const modelMsg: Message = {
-        id: (Date.now() + 1).toString(),
-        role: Role.MODEL,
-        text: result.text,
-        sources: result.sources,
-        timestamp: new Date()
-      };
-      setMessages(prev => [...prev, modelMsg]);
-      
-      // Speak the response
-      ttsService.speak(result.text);
+      // Only add message if text is not empty (fixes empty bubble issue)
+      if (result.text && result.text.trim()) {
+          const modelMsg: Message = {
+            id: (Date.now() + 1).toString(),
+            role: Role.MODEL,
+            text: result.text,
+            sources: result.sources,
+            timestamp: new Date()
+          };
+          setMessages(prev => [...prev, modelMsg]);
+          ttsService.speak(result.text);
+      }
 
     } catch (error) {
       console.error(error);
@@ -683,7 +760,7 @@ export default function App() {
         user={currentUser}
         resources={resources}
         journalEntries={journalEntries}
-        streak={streak} // Pass streak
+        streak={streak}
         onToggle={() => setIsSidebarOpen(!isSidebarOpen)}
         onNewChat={createNewChat}
         onSwitchSession={switchSession}
@@ -696,6 +773,8 @@ export default function App() {
         onDeleteResource={handleDeleteResource}
         onDeleteJournalEntry={handleJournalEntryDelete}
         onEditJournalEntry={handleJournalEntryEdit}
+        onSelectJournalEntry={(entry) => setSelectedJournalEntry(entry)}
+        onOpenProfile={() => setShowProfileModal(true)}
       />
 
       <div className={`hidden lg:block transition-all duration-300 ease-in-out ${isSidebarOpen ? 'w-64' : 'w-0'}`}></div>
@@ -765,6 +844,7 @@ export default function App() {
       {showEmergency && (
         <EmergencyOverlay 
             reason={emergencyReason} 
+            contacts={currentUser.emergencyContacts}
             onClose={() => {
                 setShowEmergency(false);
                 setAnalysis({
@@ -789,6 +869,30 @@ export default function App() {
         isOpen={!!selectedResource}
         onClose={() => setSelectedResource(null)}
         resource={selectedResource}
+      />
+
+      <JournalEntryModal
+        entry={selectedJournalEntry}
+        isOpen={!!selectedJournalEntry}
+        onClose={() => setSelectedJournalEntry(null)}
+        onUpdate={(updated) => {
+            handleJournalEntrySave(updated);
+            setSelectedJournalEntry(updated);
+        }}
+        onDelete={handleJournalEntryDelete}
+      />
+
+      <ProfileModal 
+        isOpen={showProfileModal}
+        onClose={() => setShowProfileModal(false)}
+        user={currentUser}
+        onUpdateUser={handleUpdateUser}
+      />
+
+      <OnboardingModal 
+        isOpen={showOnboarding}
+        user={currentUser}
+        onComplete={handleOnboardingComplete}
       />
     </div>
   );

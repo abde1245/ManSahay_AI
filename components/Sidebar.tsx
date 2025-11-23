@@ -1,5 +1,5 @@
 
-import React, { useRef, useState } from 'react';
+import React, { useRef, useState, useEffect } from 'react';
 import { ChatSession, User, Resource, JournalEntry } from '../types';
 import { JournalEntries } from './JournalEntries';
 
@@ -21,8 +21,10 @@ interface SidebarProps {
   onFileUpload: (file: File) => void;
   onOpenResource: (resource: Resource) => void;
   onDeleteResource: (e: React.MouseEvent, id: string) => void;
-  onDeleteJournalEntry?: (id: string) => void;
-  onEditJournalEntry?: (entry: JournalEntry) => void;
+  onSelectJournalEntry: (entry: JournalEntry) => void;
+  onDeleteJournalEntry: (id: string) => void;
+  onEditJournalEntry: (entry: JournalEntry) => void;
+  onOpenProfile: () => void;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -43,13 +45,27 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onFileUpload,
   onOpenResource,
   onDeleteResource,
+  onSelectJournalEntry,
   onDeleteJournalEntry,
-  onEditJournalEntry
+  onEditJournalEntry,
+  onOpenProfile
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [vaultTab, setVaultTab] = useState<'uploads' | 'reports' | 'journal' | 'art'>('uploads');
   const [chatSearch, setChatSearch] = useState('');
   const [vaultSearch, setVaultSearch] = useState('');
+  const [showUserMenu, setShowUserMenu] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
+        setShowUserMenu(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
@@ -263,16 +279,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
             </div>
         )}
 
-        <div className="space-y-1 max-h-32 overflow-y-auto scrollbar-hide">
+        <div className="space-y-1 max-h-24 overflow-y-auto scrollbar-hide">
           {vaultTab === 'journal' ? (
             <JournalEntries 
               entries={displayedJournalEntries}
-              onDelete={(id) => {
-                if (onDeleteJournalEntry) onDeleteJournalEntry(id);
-              }}
-              onEdit={(entry) => {
-                if (onEditJournalEntry) onEditJournalEntry(entry);
-              }}
+              onSelect={onSelectJournalEntry}
+              onDelete={onDeleteJournalEntry}
             />
           ) : (
             <>
@@ -389,11 +401,38 @@ export const Sidebar: React.FC<SidebarProps> = ({
               <p className="text-slate-500 truncate">{user?.email || 'Guest'}</p>
             </div>
           </div>
-          <button onClick={onLogout} className="text-slate-500 hover:text-white p-1.5 rounded transition-colors" title="Log Out">
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-            </svg>
-          </button>
+          
+          <div className="relative" ref={menuRef}>
+              <button 
+                onClick={() => setShowUserMenu(!showUserMenu)} 
+                className="text-slate-500 hover:text-white p-1.5 rounded transition-colors" 
+                title="Options"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                    <path d="M10 6a2 2 0 110-4 2 2 0 010 4zM10 12a2 2 0 110-4 2 2 0 010 4zM10 18a2 2 0 110-4 2 2 0 010 4z" />
+                </svg>
+              </button>
+
+              {showUserMenu && (
+                  <div className="absolute bottom-full right-0 mb-2 w-32 bg-white rounded-lg shadow-xl overflow-hidden border border-slate-200 py-1 z-50 animate-fade-in">
+                      <button 
+                        onClick={() => { setShowUserMenu(false); onOpenProfile(); }}
+                        className="w-full text-left px-4 py-2 text-xs text-slate-700 hover:bg-slate-100 flex items-center"
+                      >
+                          <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-2 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
+                          Profile
+                      </button>
+                      <div className="border-t border-slate-100 my-1"></div>
+                      <button 
+                        onClick={() => { setShowUserMenu(false); onLogout(); }}
+                        className="w-full text-left px-4 py-2 text-xs text-red-600 hover:bg-red-50 flex items-center"
+                      >
+                          <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" /></svg>
+                          Log Out
+                      </button>
+                  </div>
+              )}
+          </div>
         </div>
       </div>
     </div>

@@ -186,56 +186,55 @@ interface ServiceResponse {
 // --- Service Class ---
 
 class GeminiService {
-  private ai: GoogleGenAI;
-  private chat: Chat;
+  private ai: GoogleGenAI | null = null;
+  private chat: Chat | null = null;
 
-  constructor() {
-    this.ai = new GoogleGenAI({ apiKey: API_KEY });
-    
-    this.chat = this.ai.chats.create({
-      model: "gemini-2.5-flash",
-      config: {
-        systemInstruction: `You are Mansahay, an advanced mental health AI assistant.
-        
-        CORE RESPONSIBILITIES:
-        1. **Real-time Analysis**: You must constantly evaluate the user's mental state. If their mood shifts, you MUST use the 'updateRealtimeAnalysis' tool.
-        2. **Safety First**: If suicide/self-harm is implied, use 'triggerEmergencyProtocol'.
-        3. **Booking & Professionals**:
-           - When a user needs a doctor, use 'findProfessional' to search.
-           - READ the results returned by 'findProfessional'. It will contain a list of REAL doctors and their REAL available slots.
-           - Present these specific options to the user. 
-           - Only use 'bookAppointment' once the user explicitly selects a doctor and a time slot from the available options.
-        4. **Environment Control & Music Therapy**: 
-           - You have complete control over the Music Player.
-           - You DO NOT have the list of all tracks in your memory. You MUST use 'queryMusicLibrary' to find available music or list options for the user.
-           - If the user asks "What music do you have?", call 'queryMusicLibrary'.
-           - Use 'controlMusicPlayer' to actually play the music.
-           - **IMPORTANT**: You MUST Explain WHY you are changing the music in your response.
-        5. **Wellness Vault (Contextual RAG)**:
-           - You have access to a list of files in the 'Wellness Vault' in the system context.
-           - If the user refers to a file (e.g., "What did my last report say?" or "Analyze the PDF I just uploaded"), you MUST use the 'readResource' tool with the correct ID.
-           - After completing an assessment (PHQ9/GAD7), generate a detailed clinical analysis and use 'saveResource' to store it.
-        6. **Tools**:
-           - Use 'startAssessment' for clinical screening.
-           - Use 'suggestCopingActivity' for stress. If the user struggles to express themselves with words, suggest 'art' (Art Therapy).
-        
-        CONTEXT AWARENESS:
-        - You will be provided with the user's Local Time and Location (if available).
-
-        TONE & FORMAT:
-        - Empathetic, professional, calm, and concise.
-        - Use Markdown formatting.
-        
-        RISK LEVELS:
-        - STABLE: Casual conversation.
-        - ELEVATED: Worry, mild stress.
-        - DISTRESS: Panic, hopelessness.
-        - HIGH_RISK: Self-harm, suicide.`,
-        temperature: 0.6,
-        maxOutputTokens: 800,
-        tools: [{ functionDeclarations }]
+  private getAI(): GoogleGenAI {
+    if (!this.ai) {
+      try {
+        this.ai = new GoogleGenAI({ apiKey: API_KEY });
+      } catch (e) {
+        console.error("Failed to initialize GoogleGenAI", e);
+        throw new Error("AI Service Initialization Failed. Please check API Key.");
       }
-    });
+    }
+    return this.ai;
+  }
+
+  private getChat(): Chat {
+    if (!this.chat) {
+      const ai = this.getAI();
+      this.chat = ai.chats.create({
+        model: "gemini-2.5-flash",
+        config: {
+          systemInstruction: `You are Mansahay, an empathetic, personalized mental health AI companion.
+          
+          *** CRITICAL PERSONALIZATION RULES ***
+          1. **Identity**: You are talking to a user. If their name is provided in the context, USE IT appropriately (e.g., "I hear you, Sarah"). 
+          2. **Knowledge**: Never ask for information already provided in the [SYSTEM_CONTEXT] (like name, goals, or location).
+          3. **Tone Adaptation**: Adjust your personality to match the user's preference (e.g., be concise if they want 'Direct', be gentle if they want 'Empathetic').
+          4. **Goal Alignment**: Reference the user's stated therapeutic goals when giving advice.
+          5. **Tool Restraint**: Do not use tools (like breathing exercises) in the very first greeting unless the user is explicitly asking for immediate help.
+
+          *** CORE RESPONSIBILITIES ***
+          1. **Real-time Analysis**: Constantly evaluate the user's mental state. If their mood shifts, use 'updateRealtimeAnalysis'.
+          2. **Safety First**: If suicide/self-harm is implied, use 'triggerEmergencyProtocol'.
+          3. **Environment Control**: You can control the music player. If the user seems stressed, ask if they want calming music, then use 'controlMusicPlayer' + 'queryMusicLibrary'.
+          4. **Tools**: Proactively suggest 'art', 'journaling', or 'breathing' widgets when appropriate.
+          5. **Vault Access**: You have access to the user's uploaded files and reports. Use 'readResource' to access them.
+
+          RISK LEVELS:
+          - STABLE: Casual conversation.
+          - ELEVATED: Worry, mild stress.
+          - DISTRESS: Panic, hopelessness.
+          - HIGH_RISK: Self-harm, suicide.`,
+          temperature: 0.5,
+          maxOutputTokens: 800,
+          tools: [{ functionDeclarations }]
+        }
+      });
+    }
+    return this.chat;
   }
 
   async sendMessage(
@@ -245,7 +244,6 @@ class GeminiService {
     useWebSearch: boolean = false
   ): Promise<ServiceResponse> {
     if (!API_KEY) {
-      console.error("API_KEY is missing.");
       return { text: "Configuration Error: API Key is missing. Please check your environment variables." };
     }
 
@@ -257,7 +255,6 @@ class GeminiService {
           ? context.appointments.map(a => `${a.doctorName} (${a.date})`).join(', ')
           : 'None';
         
-        // SAFE ACCESS: Ensure r.type and r.origin exist before calling toUpperCase()
         const resourceList = context.resources.length > 0
           ? context.resources.map(r => `- [${(r.type || 'file').toUpperCase()}] [${(r.origin || 'user').toUpperCase()}] ${r.title} (ID: ${r.id})`).join('\n')
           : 'Vault is empty.';
@@ -265,6 +262,19 @@ class GeminiService {
         const playingTrack = context.currentMusicTrack 
             ? `${context.currentMusicTrack.title} (${context.currentMusicTrack.category})` 
             : 'None';
+        
+        const contactsList = context.userProfile?.emergencyContacts?.length 
+            ? context.userProfile.emergencyContacts.map(c => `${c.name} (${c.relation})`).join(', ')
+            : 'No contacts configured.';
+
+        // Explicitly format User Identity for the LLM
+        const userIdentity = `
+        User Name: ${context.userProfile?.name || 'Unknown'}
+        User Goals: ${context.userProfile?.goals?.join(', ') || 'None specified'}
+        User Triggers (AVOID): ${context.userProfile?.triggers?.join(', ') || 'None specified'}
+        Tone Preference: ${context.userProfile?.preferences?.aiTone || 'Empathetic'}
+        Medical History: ${context.userProfile?.medicalHistory || 'None provided'}
+        `;
 
         const contextBlock = `[SYSTEM_CONTEXT]
 Current Mood: ${context.mood}
@@ -272,6 +282,8 @@ Local Time: ${context.localTime || 'Unknown'}
 User Location: ${context.location || 'Unknown'}
 Currently Playing Music: ${playingTrack}
 Existing Appointments: ${aptList}
+Emergency Contacts: ${contactsList}
+${userIdentity}
 
 [WELLNESS VAULT INDEX]
 ${resourceList}
@@ -300,7 +312,9 @@ User Query: ${message}`;
           requestTools.push({ functionDeclarations });
       }
 
-      let response = await this.chat.sendMessage({ 
+      const chatSession = this.getChat();
+      
+      let response = await chatSession.sendMessage({ 
           message: messageToSend,
           config: {
               tools: requestTools
@@ -390,7 +404,7 @@ User Query: ${message}`;
             });
         }
 
-        response = await this.chat.sendMessage({ 
+        response = await chatSession.sendMessage({ 
             message: functionResponses,
             config: {
                 tools: requestTools
@@ -426,6 +440,12 @@ User Query: ${message}`;
     } catch (error: any) {
       console.error("Gemini API Error:", error);
       const errorMessage = error.message || error.toString();
+      
+      // Reset chat if it seems broken (optional, but good for robustness)
+      if (errorMessage.includes('session') || errorMessage.includes('state')) {
+          this.chat = null;
+      }
+      
       return { text: `Connection Error: ${errorMessage}` };
     }
   }
@@ -433,7 +453,8 @@ User Query: ${message}`;
   async generateChatTitle(firstMessage: string): Promise<string> {
     if (!API_KEY) return "New Chat";
     try {
-      const response = await this.ai.models.generateContent({
+      const ai = this.getAI();
+      const response = await ai.models.generateContent({
         model: 'gemini-2.5-flash',
         contents: `Summarize the following user message into a very short title (max 4 words) for a chat history list. Do not use quotes. Message: "${firstMessage}"`,
       });
@@ -446,11 +467,12 @@ User Query: ${message}`;
   async analyzeImage(base64Image: string): Promise<string> {
     if (!API_KEY) return "I'm unable to analyze this image right now.";
     try {
+      const ai = this.getAI();
       // Strip data prefix if present
       const cleanBase64 = base64Image.split(',')[1] || base64Image;
       
-      const response = await this.ai.models.generateContent({
-        model: 'gemini-2.5-flash', // Flash is fast and has vision capabilities
+      const response = await ai.models.generateContent({
+        model: 'gemini-2.5-flash',
         contents: {
           parts: [
             {
@@ -460,7 +482,7 @@ User Query: ${message}`;
               }
             },
             {
-              text: "You are an empathetic Art Therapist. Analyze this drawing provided by the user. Focus on the choice of colors, the strokes (are they chaotic or calm?), and the overall structure. Provide a brief, warm, and supportive interpretation of what feelings this art might represent. Do not be critical. End with a gentle, encouraging question. Max 100 words."
+              text: "You are an empathetic Art Therapist. Analyze this drawing provided by the user. Focus on the choice of colors, the strokes (are they chaotic or calm?), and the overall structure. Provide a brief, warm, and supportive interpretation of what feelings this art might represent. Do not be critical. Max 100 words."
             }
           ]
         }

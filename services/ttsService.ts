@@ -3,16 +3,24 @@ class TTSService {
     private synth: SpeechSynthesis | null = null;
     private voice: SpeechSynthesisVoice | null = null;
     private enabled: boolean = false;
+    private initialized: boolean = false;
   
     constructor() {
-      if (typeof window !== 'undefined') {
-        this.synth = window.speechSynthesis;
-        // Try to load voices immediately
-        if (this.synth.onvoiceschanged !== undefined) {
-          this.synth.onvoiceschanged = this.loadVoice.bind(this);
+      // Do not initialize heavily in constructor
+    }
+
+    private init() {
+        if (this.initialized) return;
+        
+        if (typeof window !== 'undefined' && window.speechSynthesis) {
+            this.synth = window.speechSynthesis;
+            // Try to load voices
+            if (this.synth.onvoiceschanged !== undefined) {
+                this.synth.onvoiceschanged = this.loadVoice.bind(this);
+            }
+            this.loadVoice();
+            this.initialized = true;
         }
-        this.loadVoice();
-      }
     }
   
     private loadVoice() {
@@ -27,7 +35,9 @@ class TTSService {
   
     public setEnabled(state: boolean) {
       this.enabled = state;
-      if (!state && this.synth) {
+      if (state) {
+          this.init();
+      } else if (this.synth) {
         this.synth.cancel();
       }
     }
@@ -37,7 +47,11 @@ class TTSService {
     }
   
     public speak(text: string) {
-      if (!this.enabled || !this.synth || !this.voice) return;
+      if (!this.enabled) return;
+      
+      this.init();
+      
+      if (!this.synth || !this.voice) return;
   
       // Stop any current speech
       this.synth.cancel();

@@ -29,10 +29,10 @@ export interface ChatSession {
 }
 
 export interface EmergencyContact {
+  id: string;
   name: string;
   relation: string;
   phone: string;
-  imageUrl?: string;
 }
 
 export interface Doctor {
@@ -91,6 +91,15 @@ export interface User {
   name: string;
   email: string;
   joinDate: Date;
+  phone?: string;
+  dateOfBirth?: string;
+  medicalHistory?: string;
+  goals?: string[];
+  triggers?: string[];
+  preferences?: {
+    aiTone?: 'empathetic' | 'direct' | 'professional' | 'warm';
+  };
+  emergencyContacts: EmergencyContact[];
 }
 
 export type ResourceType = 'report' | 'journal' | 'file' | 'image';
@@ -131,4 +140,5 @@ export interface ChatContext {
   location?: string;
   localTime?: string;
   currentMusicTrack?: Track;
+  userProfile?: User;
 }

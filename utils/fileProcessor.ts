@@ -1,14 +1,4 @@
 
-import * as pdfjsLib from 'pdfjs-dist';
-
-// Handle potential module structure differences (ESM vs CommonJS interop)
-const pdfjs = (pdfjsLib as any).default || pdfjsLib;
-
-// Dynamically align worker version with the loaded library version.
-// This prevents the "API version does not match Worker version" error.
-const pdfVersion = pdfjs.version || '3.11.174';
-pdfjs.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfVersion}/build/pdf.worker.min.js`;
-
 export const processFile = async (file: File): Promise<{ content: string; type: 'image' | 'file'; mimeType: string }> => {
   const mimeType = file.type;
   const fileName = file.name.toLowerCase();
@@ -29,9 +19,18 @@ export const processFile = async (file: File): Promise<{ content: string; type: 
   } 
   else if (mimeType === 'application/pdf' || fileName.endsWith('.pdf')) {
     try {
+      // Dynamically import PDF.js only when needed
+      // This prevents "Failed to load app" errors if the CDN is unreachable at startup
+      const pdfjsLib = await import('pdfjs-dist');
+      const pdfjs = (pdfjsLib as any).default || pdfjsLib;
+      
+      const pdfVersion = pdfjs.version || '3.11.174';
+      if (pdfjs.GlobalWorkerOptions) {
+          pdfjs.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfVersion}/build/pdf.worker.min.js`;
+      }
+
       const arrayBuffer = await file.arrayBuffer();
       
-      // Use the resolved pdfjs object
       const loadingTask = pdfjs.getDocument({ data: arrayBuffer });
       const pdf = await loadingTask.promise;
       
@@ -43,7 +42,6 @@ export const processFile = async (file: File): Promise<{ content: string; type: 
           const page = await pdf.getPage(i);
           const textContent = await page.getTextContent();
           
-          // Robust text extraction: filter items that have strings
           const pageText = textContent.items
             .filter((item: any) => item && typeof item.str === 'string')
             .map((item: any) => item.str)
